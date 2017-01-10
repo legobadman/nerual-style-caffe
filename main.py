@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 import scipy
 
 # load original image p, init image x
-source_img_org = caffe.io.load_image('pebbles.jpg')
+content_img_org = caffe.io.load_image('Neckarfront.jpg')
+style_img_org = caffe.io.load_image('starry_night_google.jpg')
 
 # load vgg network model
 VGGweights = 'vgg_normalised.caffemodel'
@@ -17,7 +18,8 @@ mean = np.array([ 0.40760392,  0.45795686,  0.48501961])
 im_size = np.array([256., 256.], dtype='int64')
 net_mean = np.tile(mean[:,None,None],(1,) + tuple(im_size.astype(int)))
 net = caffe.Classifier(VGGmodel, VGGweights, mean=net_mean, channel_swap=(2,1,0), input_scale=255,)
-source_img = net.transformer.preprocess('data', source_img_org)[None,:]
+content_img = net.transformer.preprocess('data', content_img_org)[None,:]
+style_img = net.transformer.preprocess('data', style_img_org)[None,:]
 
 ndim = 256
 init = np.random.randn(*net.blobs['data'].data.shape)
@@ -48,21 +50,39 @@ def get_bounds(images, im_size):
         bounds.append((lowerbound,upperbound))
     return bounds
 
-layers = ['pool4', 'pool3', 'pool2', 'pool1', 'conv1_1']
-#layers = ['pool4']
-G = []
-W = [1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9]
 
-net.forward(data=np.reshape(source_img, source_img.shape))
+style_layers = ['pool4', 'pool3', 'pool2', 'pool1', 'conv1_1']
+style_layers = ['conv1_1', 'pool1', 'conv2_1', 'pool2', 'conv3_1', 'pool3', 'pool4', 'pool5']
+
+layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1']
+
+#style_layers = ['conv1_1', 'pool5']
+#style_layers = ['conv1_1','pool4']
+G = []
+W = [1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9]
+alpha = 1
+beta = 1000
+A = []
+
+net.forward(data=np.reshape(style_img, style_img.shape))
 for layer in layers:
     G.append(G_matrix(net.blobs[layer].data))
+
+net.forward(data=np.reshape(content_img, content_img.shape))
+for layer in layers:
+    A.append(net.blobs[layer].data.copy())
+
 
 def f_style(x):
     net.forward(data=np.reshape(x, source_img.shape))
     loss = 0.
 
     grad = np.zeros(net.blobs['data'].diff.shape)
-    for i, layer in enumerate(layers):
+    for layer in net.blobs:
+        net.blobs[layer].diff[...] = np.zeros_like(net.blobs[layer].diff)
+
+    for i in range(len(style_layers)-1,-1,-1):
+        layer = style_layers[i]
         activations = net.blobs[layer].data.copy()
         N = activations.shape[1]
         M  = np.prod(np.array(activations.shape[2:]))
@@ -71,29 +91,81 @@ def f_style(x):
     
         F_ = net.blobs[layer].data.reshape(N, -1).copy()
 
-        E = float(W[i])/4 * (np.square(G_ - G[i]).sum()) / M**2
+        E = float(W[i])/4 * (np.square(G_ - G[i]).sum()) / N**2
         loss += E
 
-        f_grad = float(W[i]) * ((F_.T).dot(G_ - G[i])).T / ((M * N)**2)
+        f_grad = float(W[i]) * ((F_.T).dot(G_ - G[i])).T / (M * N**2)
         #f_grad[f_grad < 0] = 0
-        net.blobs[layer].diff[:] = f_grad.reshape(activations.shape)
+        net.blobs[layer].diff[:] += f_grad.reshape(activations.shape)
         net.blobs[layer].diff[(net.blobs[layer].data == 0)] = 0.
         #grad = net.backward(start='conv1_1')['data'].copy()
-        net.backward(start=layer)
-        grad = grad + net.blobs['data'].diff.copy()
+        if i > 0:
+            net.backward(start=style_layers[i], end=style_layers[i-1])
+        else:
+            grad = net.backward(start=layer)['data'].copy()
 
     print loss
     return [loss, np.array(grad.ravel(), dtype=float)]
 
 def f_content(x):
-    net.forward(data=np.reshape(x, (1, 3, ndim, ndim)), end='conv1_1')
-    F = net.blobs['conv1_1'].data.copy()
-    loss = 0.5 * np.sum(np.square(F - P))
-    F_grad = (F - P)
-    net.blobs['conv1_1'].diff[:] = F_grad
-    net.backward(start='conv1_1')
-    grad = net.blobs['data'].data.copy()
+    net.forward(data=np.reshape(x, source_img.shape))
+    loss = 0.
+    grad = np.zeros(net.blobs['data'].diff.shape)
+    for layer in net.blobs:
+        net.blobs[layer].diff[...] = np.zeros_like(net.blobs[layer].diff)
+
+    for i in range(len(content_layers)-1,-1,-1):
+        layer = content_layers[i]
+        activations = net.blobs[layer].data.copy()
+        loss += 0.5 * np.sum(np.square(activations - A[i]))
+        net.blobs[layer].diff[:] += (activations - A[i]).copy()
+        if i > 0:
+            net.backward(start=content_layers[i], end=content_layers[i-1])
+        else:
+            grad = net.backward(start=layer)['data'].copy()
+    
+    print loss
     return [loss, np.array(grad.ravel(), dtype=float)]
+
+def style_content(x):
+    def style_gradient(activatinos):
+        N = activations.shape[1]
+        M  = np.prod(np.array(activations.shape[2:]))
+        F = activations.reshape(N, -1)
+        G_ = np.dot(F, F.T) / M
+        F_ = net.blobs[layer].data.reshape(N, -1).copy()
+        loss = float(W[i])/4 * (np.square(G_ - G[i]).sum()) / N**2
+        f_grad = float(W[i]) * ((F_.T).dot(G_ - G[i])).T / (M * N**2)
+        return loss, f_grad.reshape(activations.shape)
+
+    def content_gradient(activations):
+        loss = 0.5 * np.sum(np.square(activations - A[i]))
+        f_grad = (activations - A[i]).copy()
+        return loss, f_grad
+
+    net.forward(data=np.reshape(x, content_img.shape))
+    loss = 0.
+
+    grad = np.zeros(net.blobs['data'].diff.shape)
+    for layer in net.blobs:
+        net.blobs[layer].diff[...] = np.zeros_like(net.blobs[layer].diff)
+
+    for i in range(len(layers)-1,-1,-1):
+        layer = layers[i]
+        activations = net.blobs[layer].data.copy()
+        style_loss, style_grad = style_gradient(activations)
+        content_loss, content_grad = content_gradient(activations)
+        loss += alpha * style_loss + beta * content_loss
+        net.blobs[layer].diff[:] += alpha * style_grad + beta * content_grad
+        if i > 0:
+            net.backward(start=layers[i], end=layers[i-1])
+        else:
+            grad = net.backward(start=layer)['data'].copy()
+        
+    print loss
+    return [loss, np.array(grad.ravel(), dtype=float)]
+
+
 
 def uniform_hist(X):
     '''
@@ -151,17 +223,17 @@ def histogram_matching(org_image, match_image, grey=False, n_bins=100):
 
 
 #loss, f_grad = L_content(init)
-bounds = get_bounds([source_img], im_size)
-minimize_options={'maxiter': 50, 'maxcor': 20, 'ftol': 0, 'gtol': 0}
+bounds = get_bounds([content_img], im_size)
+minimize_options={'maxiter': 10, 'maxcor': 20, 'ftol': 0, 'gtol': 0}
 
 def random_count(x):
     print np.random.random()
 
-result = minimize(f_style, init, method='L-BFGS-B', jac=True, bounds = None, options=minimize_options)#, )
+result = minimize(style_content, init, method='L-BFGS-B', jac=True, bounds = bounds, options=minimize_options)#, )
 print result
 
-new_texture = result['x'].reshape(*source_img.shape[1:]).transpose(1,2,0)[:,:,::-1]
-new_texture = histogram_matching(new_texture, source_img_org)
+new_texture = result['x'].reshape(*content_img.shape[1:]).transpose(1,2,0)[:,:,::-1]
+new_texture = histogram_matching(new_texture, content_img_org)
 plt.imshow(new_texture)
 plt.show()
 # plt.imshow(source_img_org)
