@@ -3,12 +3,12 @@ import numpy as np
 from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 import scipy
-from IPython.display import display, clear_output
+
 from preprocess import *
 
 # load original image p, init image x
-content_img_org = caffe.io.load_image('miao.jpg')
-style_img_org = caffe.io.load_image('starry_night_google.jpg')
+content_img_org = caffe.io.load_image('cat.png')
+style_img_org = caffe.io.load_image('2-style2.jpg')
 
 # load vgg network model
 VGGweights = 'vgg_normalised.caffemodel'
@@ -37,16 +37,17 @@ def G_matrix(FeatureMap):
     return G
 
 
-content_layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1']
-style_layers = ['conv1_1']#, 'conv2_1', 'conv3_1']
+content_layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1']
+style_layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1']
 
 layers = list(set(content_layers) | set(style_layers))
 layers = sorted(layers,lambda layer1, layer2 : net.blobs.keys().index(layer1) < net.blobs.keys().index(layer2))
 layers.sort()
 
 W = [1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9]
-alpha = 1
-beta = 5
+#W = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+alpha = 10
+beta = 1
 A = {}
 
 net.forward(data=np.reshape(style_img, style_img.shape))
@@ -92,13 +93,13 @@ def style_content(x):
         activations = net.blobs[layer].data.copy()
         if layer in style_layers:
             style_loss, style_grad = style_gradient(activations, G[layer])
-            loss += alpha * style_loss
-            net.blobs[layer].diff[:] += alpha * style_grad
+            loss += beta * style_loss
+            net.blobs[layer].diff[:] += beta * style_grad
 
         if layer in content_layers:
             content_loss, content_grad = content_gradient(activations, A[layer])
-            loss += beta * content_loss
-            net.blobs[layer].diff[:] += beta * content_grad
+            loss += alpha * content_loss
+            net.blobs[layer].diff[:] += alpha * content_grad
 
         if i > 0:
             net.backward(start=layers[i], end=layers[i-1])
@@ -110,15 +111,13 @@ def style_content(x):
 
 
 bounds = get_bounds([content_img], im_size)
-minimize_options={'maxiter': 2, 'maxcor': 20, 'ftol': 0, 'gtol': 0}
+minimize_options={'maxiter': 50, 'maxcor': 20, 'ftol': 0, 'gtol': 0}
 
 
-#result = minimize(style_content, init, method='L-BFGS-B', jac=True, bounds = bounds, callback=lambda x: show_progress(x, net), options=minimize_options)
-result = minimize(style_content, init, method='L-BFGS-B', jac=True, bounds = bounds, options=minimize_options)
+result = minimize(style_content, init, method='L-BFGS-B', jac=True, bounds = bounds, callback=lambda x: show_progress(x, net), options=minimize_options)
+#result = minimize(style_content, init, method='L-BFGS-B', jac=True, bounds = bounds, options=minimize_options)
+
+filename = "content %s~%s, style %s~%s, a %d, b %d" % (content_layers[0], content_layers[-1], style_layers[0], style_layers[-1], alpha, beta)
 
 print result
-
-#plt.imshow(new_texture)
-#plt.show()
-
-show_progress(result['x'], net)
+save_result(result['x'], net, filename)

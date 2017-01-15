@@ -1,4 +1,6 @@
 import numpy as np
+from IPython.display import display, clear_output
+import matplotlib.pyplot as plt
 
 def get_bounds(images, im_size):
     '''
@@ -94,6 +96,13 @@ def show_progress(x, net, title=None, handle=False):
     plt.show()
     if handle:
         return f
+
+def save_result(x, net, filename):
+    disp_image = (x.reshape(*net.blobs['data'].data.shape)[0].transpose(1,2,0)[:,:,::-1]-x.min())/(x.max()-x.min())
+    clear_output()
+    plt.imshow(disp_image)
+    plt.gcf()
+    plt.savefig(filename)
 
 def f_style(x):
     net.forward(data=np.reshape(x, source_img.shape))
