@@ -8,8 +8,8 @@ import scipy
 from preprocess import *
 
 # load original image p, init image x
-content_img_org = caffe.io.load_image('miao.jpg')
-style_img_org = caffe.io.load_image('night.jpg')
+content_img_org = caffe.io.load_image('content/' + 'miao.jpg')
+style_img_org = caffe.io.load_image('style/' + 'night.jpg')
 
 # load vgg network model
 VGGweights = 'vgg_normalised.caffemodel'
@@ -39,9 +39,9 @@ def G_matrix(FeatureMap):
 
 
 content_layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1']
-content_layers = ['conv1_1']
+content_layers = []
 style_layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1']
-#style_layers = ['conv5_1']
+style_layers = ['conv1_1']
 
 layers = list(set(content_layers) | set(style_layers))
 layers = sorted(layers,lambda layer1, layer2 : net.blobs.keys().index(layer1) < net.blobs.keys().index(layer2))
