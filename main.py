@@ -4,12 +4,15 @@ from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 from IPython.display import display, clear_output
 import scipy
+import os
 
 from preprocess import *
 
 # load original image p, init image x
-content_img_org = caffe.io.load_image('content/' + 'miao.jpg')
-style_img_org = caffe.io.load_image('style/' + 'night.jpg')
+content_name = "miao.jpg"
+content_img_org = caffe.io.load_image('content/' + content_name)
+style_name = "night.jpg"
+style_img_org = caffe.io.load_image('style/' + style_name)
 
 # load vgg network model
 VGGweights = 'vgg_normalised.caffemodel'
@@ -39,9 +42,9 @@ def G_matrix(FeatureMap):
 
 
 content_layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1']
-content_layers = []
+content_layers = ['conv1_1']
 style_layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1']
-style_layers = ['conv1_1']
+style_layers = []
 
 layers = list(set(content_layers) | set(style_layers))
 layers = sorted(layers,lambda layer1, layer2 : net.blobs.keys().index(layer1) < net.blobs.keys().index(layer2))
@@ -123,15 +126,27 @@ def style_content(x):
 
 
 bounds = get_bounds([content_img], im_size)
-minimize_options={'maxiter': 50, 'maxcor': 20, 'ftol': 0, 'gtol': 0}
+
+
+filename = ""
+if content_layers != []:
+    filename += "content(%s) %s, " % (content_name, ' '.join(content_layers))
+if style_layers != []:
+    filename += "style(%s) %s " % (style_name, ' '.join(style_layers))
+
+dir_name = filename
+
 
 iters = 0
-def show_iter(x, net, title=None, handle=False, show_img=True):
+def show_iter(x, net, title=None, handle=False, show_img=True, save_img=False):
     global iters
     print 'iters = %d, loss = %d' % (iters, loss)
-    iters += 1
-
-    if iters % 10 == 0:
+    
+    if iters == 0:
+        if dir_name not in os.listdir('.'):
+            os.mkdir(dir_name)
+        os.chdir(dir_name)
+    elif iters % 10 == 0:
         if show_img:
             disp_image = (x.reshape(*net.blobs['data'].data.shape)[0].transpose(1,2,0)[:,:,::-1]-x.min())/(x.max()-x.min())
             clear_output()
@@ -142,17 +157,20 @@ def show_iter(x, net, title=None, handle=False, show_img=True):
             f = plt.gcf()
             display()
             plt.show()
+        if save_img:
+            save_result(x, net, "%s.png" % str(iters))
 
+    iters += 1
     if handle:
         return f
 
+minimize_options={'maxiter': 100, 'maxcor': 20, 'ftol': 0, 'gtol': 0}
 #result = minimize(style_content, init, method='L-BFGS-B', jac=True, bounds = bounds, callback=lambda x: show_progress(x, net), options=minimize_options)
-result = minimize(style_content, init, method='L-BFGS-B', jac=True, bounds = bounds, callback=lambda x: show_iter(x, net), options=minimize_options)
+result = minimize(style_content, init, method='L-BFGS-B', jac=True, bounds = bounds, 
+                    callback=lambda x: show_iter(x, net, show_img=False, save_img=True), 
+                    options=minimize_options)
 #result = minimize(style_content, init, method='L-BFGS-B', jac=True, bounds = bounds, options=minimize_options)
 
-filename = "content %s~%s, style %s~%s, a %d, b %d" % (content_layers[0], content_layers[-1], style_layers[0], style_layers[-1], alpha, beta)
+
 
 print result
-save_result(result['x'], net, filename)
-
-# 26/dec 197a 5:02:03
