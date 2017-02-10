@@ -39,7 +39,9 @@ def G_matrix(FeatureMap):
 
 
 content_layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1']
-style_layers = ['conv1_1']#, 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1']
+content_layers = ['conv1_1']
+style_layers = ['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1']
+#style_layers = ['conv5_1']
 
 layers = list(set(content_layers) | set(style_layers))
 layers = sorted(layers,lambda layer1, layer2 : net.blobs.keys().index(layer1) < net.blobs.keys().index(layer2))
@@ -107,10 +109,10 @@ def style_content(x):
             loss += beta * style_loss
             net.blobs[layer].diff[:] += beta * style_grad
 
-        #if layer in content_layers:
-        #    content_loss, content_grad = content_gradient(layer)
-        #    loss += alpha * content_loss
-        #    net.blobs[layer].diff[:] += alpha * content_grad
+        if layer in content_layers:
+            content_loss, content_grad = content_gradient(layer)
+            loss += alpha * content_loss
+            net.blobs[layer].diff[:] += alpha * content_grad
 
         if i > 0:
             net.backward(start=layers[i], end=layers[i-1])
@@ -121,23 +123,26 @@ def style_content(x):
 
 
 bounds = get_bounds([content_img], im_size)
-minimize_options={'maxiter': 120, 'maxcor': 20, 'ftol': 0, 'gtol': 0}
+minimize_options={'maxiter': 50, 'maxcor': 20, 'ftol': 0, 'gtol': 0}
 
 iters = 0
-def show_iter(x, net, title=None, handle=False):
+def show_iter(x, net, title=None, handle=False, show_img=True):
     global iters
     print 'iters = %d, loss = %d' % (iters, loss)
     iters += 1
 
-    disp_image = (x.reshape(*net.blobs['data'].data.shape)[0].transpose(1,2,0)[:,:,::-1]-x.min())/(x.max()-x.min())
-    clear_output()
-    plt.imshow(disp_image)
-    if title != None:
-        ax = plt.gca()
-        ax.set_title(title)
-    f = plt.gcf()
-    display()
-    plt.show()
+    if iters % 10 == 0:
+        if show_img:
+            disp_image = (x.reshape(*net.blobs['data'].data.shape)[0].transpose(1,2,0)[:,:,::-1]-x.min())/(x.max()-x.min())
+            clear_output()
+            plt.imshow(disp_image)
+            if title != None:
+                ax = plt.gca()
+                ax.set_title(title)
+            f = plt.gcf()
+            display()
+            plt.show()
+
     if handle:
         return f
 

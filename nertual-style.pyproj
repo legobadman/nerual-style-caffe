@@ -27,6 +27,12 @@
   <ItemGroup>
     <Compile Include="main.py" />
     <Compile Include="optimize.py" />
+    <Compile Include="preprocess.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="visiualize.py">
+      <SubType>Code</SubType>
+    </Compile>
   </ItemGroup>
   <Import Project="$(PtvsTargetsFile)" Condition="Exists($(PtvsTargetsFile))" />
   <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" Condition="!Exists($(PtvsTargetsFile))" />
